@@ -10,29 +10,15 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS) || 30000;
 
-// ─── TELEGRAM ────────────────────────────────────────────────────────────────
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TG_CHAT  = process.env.TELEGRAM_CHAT_ID   || '';
 
 async function sendTelegram(msg) {
   if (!TG_TOKEN || !TG_CHAT) return;
-  try {
-    await axios.post(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-      chat_id: TG_CHAT,
-      text: msg,
-      parse_mode: 'HTML'
-    });
-  } catch (e) { console.error('[Telegram]', e.message); }
+  try { await axios.post(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, { chat_id: TG_CHAT, text: msg, parse_mode: 'HTML' }); } catch (e) {}
 }
 
-// ─── ESTADO ──────────────────────────────────────────────────────────────────
-const state = {
-  checks: 0,
-  sales: [],
-  seenIds: new Set(),
-  logs: [],
-  lastCheck: null
-};
+const state = { checks: 0, sales: [], seenIds: new Set(), logs: [], lastCheck: null };
 
 function addLog(msg) {
   const entry = { ts: new Date().toISOString(), msg };
@@ -46,450 +32,201 @@ function addSale(sale) {
   state.seenIds.add(sale.id);
   state.sales.unshift(sale);
   if (state.sales.length > 50) state.sales.pop();
-  state.checks++;
-  addLog(`💰 VENDA REAL: ${sale.market} | ${sale.item} | R$ ${sale.price} | ${sale.buyer || ''}`);
-  sendTelegram(`🔔 <b>Nova venda!</b>\n📦 ${sale.item}\n💰 R$ ${sale.price}\n🛒 ${sale.market}\n👤 ${sale.buyer || 'N/A'}`);
+  addLog(`VENDA REAL: ${sale.market} | ${sale.item} | R$ ${sale.price}`);
+  sendTelegram(`🔔 Nova venda!\n📦 ${sale.item}\n💰 R$ ${sale.price}\n🛒 ${sale.market}`);
   return true;
 }
 
-// ─── MERCADO LIVRE ───────────────────────────────────────────────────────────
-// OAuth2 — precisa de: ML_ACCESS_TOKEN (gerado via https://developers.mercadolivre.com.br)
-// ou ML_CLIENT_ID + ML_CLIENT_SECRET + ML_REFRESH_TOKEN para auto-refresh
-const ML_ACCESS_TOKEN  = process.env.ML_ACCESS_TOKEN  || '';
+// MERCADO LIVRE
+const ML_ACCESS_TOKEN = process.env.ML_ACCESS_TOKEN || '';
 const ML_REFRESH_TOKEN = process.env.ML_REFRESH_TOKEN || '';
-const ML_CLIENT_ID     = process.env.ML_CLIENT_ID     || '';
+const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
 const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || '';
-
 let mlToken = ML_ACCESS_TOKEN;
 
-async function refreshMLToken() {
-  if (!ML_CLIENT_ID || !ML_REFRESH_TOKEN) return;
-  try {
-    const res = await axios.post('https://api.mercadolibre.com/oauth/token', {
-      grant_type: 'refresh_token',
-      client_id: ML_CLIENT_ID,
-      client_secret: ML_CLIENT_SECRET,
-      refresh_token: ML_REFRESH_TOKEN
-    });
-    mlToken = res.data.access_token;
-    addLog('[ML] Token renovado com sucesso');
-  } catch (e) {
-    addLog('[ML] Erro ao renovar token: ' + e.message);
-  }
-}
-
 async function checkMercadoLivre() {
-  if (!mlToken) { addLog('[ML] ML_ACCESS_TOKEN não configurado — pule esta etapa'); return; }
+  if (!mlToken) { addLog('[ML] ML_ACCESS_TOKEN nao configurado'); return; }
   try {
-    // busca pedidos pagos/recentes
-    const res = await axios.get('https://api.mercadolibre.com/orders/search?sort=date_desc&limit=10', {
-      headers: { Authorization: `Bearer ${mlToken}` }
-    });
+    const res = await axios.get('https://api.mercadolibre.com/orders/search?sort=date_desc&limit=10', { headers: { Authorization: `Bearer ${mlToken}` } });
     const orders = res.data.results || [];
     for (const order of orders) {
-      if (['paid', 'payment_required', 'partially_paid'].includes(order.status)) {
-        const item = order.order_items?.[0]?.item?.title || 'Produto';
-        const price = order.total_amount || order.order_items?.[0]?.unit_price || 0;
-        const buyer = order.buyer?.nickname || '';
-        addSale({
-          id: `ml_${order.id}`,
-          market: 'mercadolivre.com.br',
-          item,
-          price: parseFloat(price).toFixed(2),
-          buyer,
-          detectedAt: new Date().toISOString(),
-          source: 'api-oficial'
-        });
+      if (['paid','payment_required'].includes(order.status)) {
+        addSale({ id: `ml_${order.id}`, market: 'mercadolivre.com.br', item: order.order_items?.[0]?.item?.title || 'Produto ML', price: parseFloat(order.total_amount || 0).toFixed(2), buyer: order.buyer?.nickname || '', detectedAt: new Date().toISOString(), source: 'api-oficial' });
       }
     }
-    addLog(`[ML] Verificado — ${orders.length} pedidos encontrados`);
+    addLog(`[ML] ${orders.length} pedidos verificados`);
   } catch (e) {
-    if (e.response?.status === 401) {
-      addLog('[ML] Token expirado, tentando renovar...');
-      await refreshMLToken();
-    } else {
-      addLog('[ML] Erro: ' + e.message);
-    }
+    if (e.response?.status === 401 && ML_CLIENT_ID && ML_REFRESH_TOKEN) {
+      try {
+        const r = await axios.post('https://api.mercadolibre.com/oauth/token', { grant_type: 'refresh_token', client_id: ML_CLIENT_ID, client_secret: ML_CLIENT_SECRET, refresh_token: ML_REFRESH_TOKEN });
+        mlToken = r.data.access_token;
+        addLog('[ML] Token renovado');
+      } catch (e2) { addLog('[ML] Erro renovar token: ' + e2.message); }
+    } else { addLog('[ML] Erro: ' + e.message); }
   }
 }
 
-// ─── DFG.COM.BR ──────────────────────────────────────────────────────────────
-const DFG_EMAIL = process.env.DFG_EMAIL || '';
-const DFG_PASS  = process.env.DFG_PASSWORD || '';
-let dfgCookie   = '';
-
-async function loginDFG() {
-  if (!DFG_EMAIL || !DFG_PASS) return false;
-  try {
-    const res = await axios.post('https://www.dfg.com.br/api/login', {
-      email: DFG_EMAIL,
-      password: DFG_PASS
-    }, {
-      headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-      maxRedirects: 5
-    });
-    // captura cookie de sessão
-    const cookies = res.headers['set-cookie'];
-    if (cookies) {
-      dfgCookie = cookies.map(c => c.split(';')[0]).join('; ');
-      addLog('[DFG] Login OK');
-      return true;
-    }
-    // tenta token JWT
-    if (res.data?.token) {
-      dfgCookie = `token=${res.data.token}`;
-      addLog('[DFG] Login OK (JWT)');
-      return true;
-    }
-  } catch (e) {
-    addLog('[DFG] Erro no login: ' + e.message);
-  }
-  return false;
-}
+// DFG — USA COOKIE DIRETO
+const DFG_COOKIE = process.env.DFG_COOKIE || '';
 
 async function checkDFG() {
-  if (!DFG_EMAIL || !DFG_PASS) { addLog('[DFG] Credenciais não configuradas'); return; }
-  if (!dfgCookie) await loginDFG();
-  if (!dfgCookie) return;
+  if (!DFG_COOKIE) { addLog('[DFG] DFG_COOKIE nao configurado no Render'); return; }
   try {
-    // tenta endpoint de vendas/pedidos
-    const endpoints = [
-      '/api/user/sales', '/api/sales', '/api/orders',
-      '/api/user/orders', '/api/user/products/sold'
-    ];
-    let orders = null;
-    for (const ep of endpoints) {
+    const headers = { Cookie: DFG_COOKIE, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', Accept: 'text/html,application/json', 'X-Requested-With': 'XMLHttpRequest' };
+    let found = false;
+    for (const ep of ['/api/user/sales','/api/sales','/api/orders']) {
       try {
-        const r = await axios.get(`https://www.dfg.com.br${ep}`, {
-          headers: { Cookie: dfgCookie, 'User-Agent': 'Mozilla/5.0' }
-        });
-        if (r.data && (r.data.data || Array.isArray(r.data))) {
-          orders = r.data.data || r.data;
-          addLog(`[DFG] Endpoint funcionou: ${ep}`);
-          break;
+        const r = await axios.get(`https://www.dfg.com.br${ep}`, { headers });
+        const data = r.data?.data || r.data;
+        if (Array.isArray(data)) {
+          data.forEach(o => addSale({ id: `dfg_${o.id||o.order_id}`, market: 'dfg.com.br', item: o.title||o.product_name||o.name||'Produto DFG', price: parseFloat(o.price||o.amount||0).toFixed(2), buyer: o.buyer_name||'', detectedAt: new Date().toISOString(), source: 'api' }));
+          addLog(`[DFG] API OK: ${ep} — ${data.length} registros`);
+          found = true; break;
         }
       } catch (_) {}
     }
-    if (!orders) {
-      // fallback: scraping da página de vendas
-      const r = await axios.get('https://www.dfg.com.br/pt/user/sales', {
-        headers: { Cookie: dfgCookie, 'User-Agent': 'Mozilla/5.0' }
-      });
-      const $ = cheerio.load(r.data);
-      // coleta linhas de venda da tabela
-      $('table tbody tr, .sale-item, .order-row, [class*="sale"], [class*="order"]').each((i, el) => {
-        const text = $(el).text().trim();
-        const idMatch = text.match(/\d{6,}/);
-        const priceMatch = text.match(/R\$\s*([\d.,]+)/);
-        if (idMatch && priceMatch) {
-          addSale({
-            id: `dfg_${idMatch[0]}`,
-            market: 'dfg.com.br',
-            item: $(el).find('[class*="title"], td:nth-child(2), .name').first().text().trim() || 'Produto DFG',
-            price: priceMatch[1].replace(',', '.'),
-            detectedAt: new Date().toISOString(),
-            source: 'scraping'
+    if (!found) {
+      for (const pg of ['/pt/user/sales','/pt/user/my-sales','/user/sales']) {
+        try {
+          const r = await axios.get(`https://www.dfg.com.br${pg}`, { headers: { ...headers, Accept: 'text/html' } });
+          const $ = cheerio.load(r.data);
+          let count = 0;
+          $('table tbody tr, [class*="sale"], [class*="order"]').each((i, el) => {
+            const text = $(el).text().replace(/\s+/g, ' ').trim();
+            const id = $(el).attr('data-id') || text.match(/\b(\d{6,})\b/)?.[1];
+            const price = text.match(/R\$\s*([\d]+[.,][\d]+)/)?.[1];
+            if (id && price) { addSale({ id: `dfg_${id}`, market: 'dfg.com.br', item: $(el).find('[class*="title"],td:nth-child(2)').first().text().trim() || 'Produto DFG', price: price.replace(',','.'), detectedAt: new Date().toISOString(), source: 'scraping' }); count++; }
           });
-        }
-      });
-      addLog('[DFG] Scraping da página de vendas concluído');
-      return;
-    }
-    if (Array.isArray(orders)) {
-      for (const o of orders) {
-        const statusOk = ['paid', 'sold', 'completed', 'approved', 'concluido', 'pago'].includes(
-          (o.status || o.estado || '').toLowerCase()
-        );
-        if (statusOk || o.id) {
-          addSale({
-            id: `dfg_${o.id || o.order_id}`,
-            market: 'dfg.com.br',
-            item: o.title || o.product_name || o.name || o.item || 'Produto DFG',
-            price: parseFloat(o.price || o.amount || o.valor || 0).toFixed(2),
-            buyer: o.buyer_name || o.buyer?.name || '',
-            detectedAt: new Date().toISOString(),
-            source: 'api'
-          });
-        }
+          addLog(`[DFG] Scraping ${pg} — ${count} vendas`);
+          found = true; break;
+        } catch (_) {}
       }
     }
-    addLog(`[DFG] Verificado — ${(orders||[]).length} registros`);
-  } catch (e) {
-    addLog('[DFG] Erro: ' + e.message);
-    dfgCookie = ''; // força novo login na próxima rodada
-  }
+    if (!found) addLog('[DFG] Nenhum endpoint funcionou. Verifique o DFG_COOKIE.');
+  } catch (e) { addLog('[DFG] Erro geral: ' + e.message); }
 }
 
-// ─── DESAPEGO GAMES ──────────────────────────────────────────────────────────
-const DG_EMAIL = process.env.DESAPEGO_EMAIL    || '';
-const DG_PASS  = process.env.DESAPEGO_PASSWORD || '';
-let dgCookie   = '';
-
-async function loginDesapego() {
-  if (!DG_EMAIL || !DG_PASS) return false;
-  try {
-    // pega token CSRF
-    const loginPage = await axios.get('https://www.desapegogames.com.br/login', {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const $ = cheerio.load(loginPage.data);
-    const csrf = $('input[name="_token"], meta[name="csrf-token"]').attr('value') ||
-                 $('meta[name="csrf-token"]').attr('content') || '';
-    const pageCookies = (loginPage.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-    const res = await axios.post('https://www.desapegogames.com.br/login', {
-      email: DG_EMAIL, password: DG_PASS, _token: csrf
-    }, {
-      headers: {
-        Cookie: pageCookies,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0',
-        Referer: 'https://www.desapegogames.com.br/login'
-      },
-      maxRedirects: 5
-    });
-    const cookies = res.headers['set-cookie'];
-    if (cookies) {
-      dgCookie = cookies.map(c => c.split(';')[0]).join('; ');
-      addLog('[DG] Login OK');
-      return true;
-    }
-  } catch (e) { addLog('[DG] Erro login: ' + e.message); }
-  return false;
-}
+// DESAPEGO GAMES
+const DG_COOKIE = process.env.DESAPEGO_COOKIE || '';
+const DG_EMAIL = process.env.DESAPEGO_EMAIL || '';
+const DG_PASS = process.env.DESAPEGO_PASSWORD || '';
+let dgSession = DG_COOKIE;
 
 async function checkDesapego() {
-  if (!DG_EMAIL || !DG_PASS) { addLog('[DG] Credenciais não configuradas'); return; }
-  if (!dgCookie) await loginDesapego();
-  if (!dgCookie) return;
-  try {
-    const res = await axios.get('https://www.desapegogames.com.br/profile/sales', {
-      headers: { Cookie: dgCookie, 'User-Agent': 'Mozilla/5.0' }
-    });
-    const $ = cheerio.load(res.data);
-    $('[class*="sale"], [class*="order"], table tbody tr, .item-row').each((i, el) => {
-      const text = $(el).text().trim();
-      const idMatch = $(el).attr('data-id') || text.match(/\d{5,}/)?.[0];
-      const priceMatch = text.match(/R\$\s*([\d.,]+)/);
-      if (idMatch) {
-        addSale({
-          id: `dg_${idMatch}`,
-          market: 'desapegogames.com.br',
-          item: $(el).find('[class*="title"], [class*="name"], td:first').text().trim() || 'Produto Desapego',
-          price: priceMatch ? priceMatch[1].replace(',', '.') : '0.00',
-          detectedAt: new Date().toISOString(),
-          source: 'scraping'
-        });
-      }
-    });
-    addLog('[DG] Verificado');
-  } catch (e) {
-    addLog('[DG] Erro: ' + e.message);
-    dgCookie = '';
+  if (!dgSession && DG_EMAIL) {
+    try {
+      const lp = await axios.get('https://www.desapegogames.com.br/login', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const $ = cheerio.load(lp.data);
+      const csrf = $('input[name="_token"]').attr('value') || '';
+      const pc = (lp.headers['set-cookie']||[]).map(c=>c.split(';')[0]).join('; ');
+      const res = await axios.post('https://www.desapegogames.com.br/login', `email=${encodeURIComponent(DG_EMAIL)}&password=${encodeURIComponent(DG_PASS)}&_token=${csrf}`, { headers: { Cookie: pc, 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0' }, maxRedirects: 5 });
+      const ck = res.headers['set-cookie'];
+      if (ck) { dgSession = ck.map(c=>c.split(';')[0]).join('; '); addLog('[DG] Login OK'); }
+    } catch (e) { addLog('[DG] Erro login: ' + e.message); }
   }
-}
-
-// ─── GAMEMARKET ───────────────────────────────────────────────────────────────
-const GM_EMAIL = process.env.GAMEMARKET_EMAIL    || '';
-const GM_PASS  = process.env.GAMEMARKET_PASSWORD || '';
-let gmCookie   = '';
-
-async function loginGameMarket() {
-  if (!GM_EMAIL || !GM_PASS) return false;
+  if (!dgSession) { addLog('[DG] Sem credenciais'); return; }
   try {
-    const loginPage = await axios.get('https://www.gamemarket.com.br/login', {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
+    const res = await axios.get('https://www.desapegogames.com.br/profile/sales', { headers: { Cookie: dgSession, 'User-Agent': 'Mozilla/5.0' } });
+    const $ = cheerio.load(res.data);
+    let count = 0;
+    $('[class*="sale"],[class*="order"],table tbody tr').each((i, el) => {
+      const text = $(el).text().replace(/\s+/g,' ').trim();
+      const id = $(el).attr('data-id') || text.match(/\b(\d{5,})\b/)?.[1];
+      const price = text.match(/R\$\s*([\d]+[.,][\d]+)/)?.[1];
+      if (id) { addSale({ id: `dg_${id}`, market: 'desapegogames.com.br', item: $(el).find('[class*="title"],td:first').text().trim()||'Produto Desapego', price: price?price.replace(',','.'):'0.00', detectedAt: new Date().toISOString(), source: 'scraping' }); count++; }
     });
-    const $ = cheerio.load(loginPage.data);
-    const csrf = $('input[name="_token"]').attr('value') || '';
-    const pageCookies = (loginPage.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-    const res = await axios.post('https://www.gamemarket.com.br/login', {
-      email: GM_EMAIL, password: GM_PASS, _token: csrf
-    }, {
-      headers: {
-        Cookie: pageCookies,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0'
-      },
-      maxRedirects: 5
-    });
-    const cookies = res.headers['set-cookie'];
-    if (cookies) {
-      gmCookie = cookies.map(c => c.split(';')[0]).join('; ');
-      addLog('[GM] Login OK');
-      return true;
-    }
-  } catch (e) { addLog('[GM] Erro login: ' + e.message); }
-  return false;
+    addLog(`[DG] ${count} vendas`);
+  } catch (e) { addLog('[DG] Erro: ' + e.message); dgSession = DG_COOKIE; }
 }
+
+// GAMEMARKET
+const GM_COOKIE = process.env.GAMEMARKET_COOKIE || '';
+const GM_EMAIL = process.env.GAMEMARKET_EMAIL || '';
+const GM_PASS = process.env.GAMEMARKET_PASSWORD || '';
+let gmSession = GM_COOKIE;
 
 async function checkGameMarket() {
-  if (!GM_EMAIL || !GM_PASS) { addLog('[GM] Credenciais não configuradas'); return; }
-  if (!gmCookie) await loginGameMarket();
-  if (!gmCookie) return;
-  try {
-    const res = await axios.get('https://www.gamemarket.com.br/perfil/vendas', {
-      headers: { Cookie: gmCookie, 'User-Agent': 'Mozilla/5.0' }
-    });
-    const $ = cheerio.load(res.data);
-    $('[class*="sale"], [class*="order"], [class*="sell"], table tbody tr').each((i, el) => {
-      const text = $(el).text().trim();
-      const idMatch = $(el).attr('data-id') || text.match(/\d{5,}/)?.[0];
-      const priceMatch = text.match(/R\$\s*([\d.,]+)/);
-      if (idMatch) {
-        addSale({
-          id: `gm_${idMatch}`,
-          market: 'gamemarket.com.br',
-          item: $(el).find('[class*="title"], [class*="name"], td:first').text().trim() || 'Produto GameMarket',
-          price: priceMatch ? priceMatch[1].replace(',', '.') : '0.00',
-          detectedAt: new Date().toISOString(),
-          source: 'scraping'
-        });
-      }
-    });
-    addLog('[GM] Verificado');
-  } catch (e) {
-    addLog('[GM] Erro: ' + e.message);
-    gmCookie = '';
+  if (!gmSession && GM_EMAIL) {
+    try {
+      const lp = await axios.get('https://www.gamemarket.com.br/login', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const $ = cheerio.load(lp.data);
+      const csrf = $('input[name="_token"]').attr('value') || '';
+      const pc = (lp.headers['set-cookie']||[]).map(c=>c.split(';')[0]).join('; ');
+      const res = await axios.post('https://www.gamemarket.com.br/login', `email=${encodeURIComponent(GM_EMAIL)}&password=${encodeURIComponent(GM_PASS)}&_token=${csrf}`, { headers: { Cookie: pc, 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0' }, maxRedirects: 5 });
+      const ck = res.headers['set-cookie'];
+      if (ck) { gmSession = ck.map(c=>c.split(';')[0]).join('; '); addLog('[GM] Login OK'); }
+    } catch (e) { addLog('[GM] Erro login: ' + e.message); }
   }
-}
-
-// ─── GGMAX ────────────────────────────────────────────────────────────────────
-const GX_EMAIL = process.env.GGMAX_EMAIL    || '';
-const GX_PASS  = process.env.GGMAX_PASSWORD || '';
-let gxCookie   = '';
-
-async function loginGGMax() {
-  if (!GX_EMAIL || !GX_PASS) return false;
+  if (!gmSession) { addLog('[GM] Sem credenciais'); return; }
   try {
-    const res = await axios.post('https://www.ggmax.com.br/api/auth/login', {
-      email: GX_EMAIL, password: GX_PASS
-    }, { headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' } });
-    if (res.data?.token) {
-      gxCookie = `token=${res.data.token}`;
-      addLog('[GX] Login OK (JWT)');
-      return true;
-    }
-    const cookies = res.headers['set-cookie'];
-    if (cookies) {
-      gxCookie = cookies.map(c => c.split(';')[0]).join('; ');
-      addLog('[GX] Login OK');
-      return true;
-    }
-  } catch (e) { addLog('[GX] Erro login: ' + e.message); }
-  return false;
+    const res = await axios.get('https://www.gamemarket.com.br/perfil/vendas', { headers: { Cookie: gmSession, 'User-Agent': 'Mozilla/5.0' } });
+    const $ = cheerio.load(res.data);
+    let count = 0;
+    $('[class*="sale"],[class*="order"],table tbody tr').each((i, el) => {
+      const text = $(el).text().replace(/\s+/g,' ').trim();
+      const id = $(el).attr('data-id') || text.match(/\b(\d{5,})\b/)?.[1];
+      const price = text.match(/R\$\s*([\d]+[.,][\d]+)/)?.[1];
+      if (id) { addSale({ id: `gm_${id}`, market: 'gamemarket.com.br', item: $(el).find('[class*="title"],td:first').text().trim()||'Produto GameMarket', price: price?price.replace(',','.'):'0.00', detectedAt: new Date().toISOString(), source: 'scraping' }); count++; }
+    });
+    addLog(`[GM] ${count} vendas`);
+  } catch (e) { addLog('[GM] Erro: ' + e.message); gmSession = GM_COOKIE; }
 }
+
+// GGMAX
+const GX_COOKIE = process.env.GGMAX_COOKIE || '';
+const GX_EMAIL = process.env.GGMAX_EMAIL || '';
+const GX_PASS = process.env.GGMAX_PASSWORD || '';
+let gxSession = GX_COOKIE;
 
 async function checkGGMax() {
-  if (!GX_EMAIL || !GX_PASS) { addLog('[GX] Credenciais não configuradas'); return; }
-  if (!gxCookie) await loginGGMax();
-  if (!gxCookie) return;
-  try {
-    // tenta API primeiro, depois scraping
-    let orders = null;
+  if (!gxSession && GX_EMAIL) {
     try {
-      const r = await axios.get('https://www.ggmax.com.br/api/user/sales', {
-        headers: { Cookie: gxCookie, Authorization: gxCookie.startsWith('token=') ? `Bearer ${gxCookie.slice(6)}` : '', 'User-Agent': 'Mozilla/5.0' }
-      });
-      orders = r.data?.data || r.data;
-    } catch (_) {}
-
-    if (orders && Array.isArray(orders)) {
-      for (const o of orders) {
-        addSale({
-          id: `gx_${o.id || o.order_id}`,
-          market: 'ggmax.com.br',
-          item: o.title || o.name || o.product || 'Produto GGMAX',
-          price: parseFloat(o.price || o.amount || 0).toFixed(2),
-          detectedAt: new Date().toISOString(),
-          source: 'api'
-        });
-      }
-    } else {
-      const res = await axios.get('https://www.ggmax.com.br/perfil/vendas', {
-        headers: { Cookie: gxCookie, 'User-Agent': 'Mozilla/5.0' }
-      });
-      const $ = cheerio.load(res.data);
-      $('[class*="sale"], [class*="order"], table tbody tr').each((i, el) => {
-        const text = $(el).text().trim();
-        const idMatch = $(el).attr('data-id') || text.match(/\d{5,}/)?.[0];
-        const priceMatch = text.match(/R\$\s*([\d.,]+)/);
-        if (idMatch) {
-          addSale({
-            id: `gx_${idMatch}`,
-            market: 'ggmax.com.br',
-            item: $(el).find('[class*="title"], td:first').text().trim() || 'Produto GGMAX',
-            price: priceMatch ? priceMatch[1].replace(',', '.') : '0.00',
-            detectedAt: new Date().toISOString(),
-            source: 'scraping'
-          });
-        }
-      });
-    }
-    addLog('[GX] Verificado');
-  } catch (e) {
-    addLog('[GX] Erro: ' + e.message);
-    gxCookie = '';
+      const res = await axios.post('https://www.ggmax.com.br/api/auth/login', { email: GX_EMAIL, password: GX_PASS }, { headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' } });
+      if (res.data?.token) { gxSession = `Bearer ${res.data.token}`; addLog('[GX] Login OK'); }
+    } catch (e) { addLog('[GX] Erro login: ' + e.message); }
   }
+  if (!gxSession) { addLog('[GX] Sem credenciais'); return; }
+  try {
+    const isBearer = gxSession.startsWith('Bearer ');
+    const headers = isBearer ? { Authorization: gxSession, 'User-Agent': 'Mozilla/5.0' } : { Cookie: gxSession, 'User-Agent': 'Mozilla/5.0' };
+    const res = await axios.get('https://www.ggmax.com.br/perfil/vendas', { headers });
+    const $ = cheerio.load(res.data);
+    let count = 0;
+    $('[class*="sale"],[class*="order"],table tbody tr').each((i, el) => {
+      const text = $(el).text().replace(/\s+/g,' ').trim();
+      const id = $(el).attr('data-id') || text.match(/\b(\d{5,})\b/)?.[1];
+      const price = text.match(/R\$\s*([\d]+[.,][\d]+)/)?.[1];
+      if (id) { addSale({ id: `gx_${id}`, market: 'ggmax.com.br', item: $(el).find('[class*="title"],td:first').text().trim()||'Produto GGMAX', price: price?price.replace(',','.'):'0.00', detectedAt: new Date().toISOString(), source: 'scraping' }); count++; }
+    });
+    addLog(`[GX] ${count} vendas`);
+  } catch (e) { addLog('[GX] Erro: ' + e.message); gxSession = GX_COOKIE; }
 }
 
-// ─── LOOP PRINCIPAL ──────────────────────────────────────────────────────────
 async function checkAll() {
   state.lastCheck = new Date().toISOString();
   state.checks++;
-  addLog('--- Iniciando verificação ---');
-  await Promise.allSettled([
-    checkMercadoLivre(),
-    checkDFG(),
-    checkDesapego(),
-    checkGameMarket(),
-    checkGGMax()
-  ]);
-  addLog('--- Verificação concluída ---');
+  addLog('--- Verificacao iniciada ---');
+  await Promise.allSettled([checkMercadoLivre(), checkDFG(), checkDesapego(), checkGameMarket(), checkGGMax()]);
+  addLog('--- Verificacao concluida ---');
 }
 
 setInterval(checkAll, POLL_INTERVAL);
-setTimeout(checkAll, 3000); // primeira checagem em 3 segundos
+setTimeout(checkAll, 3000);
 
-// ─── ROTAS ────────────────────────────────────────────────────────────────────
 app.get('/api/status', (req, res) => {
-  res.json({
-    stats: { checks: state.checks, sales: state.sales.length, lastCheck: state.lastCheck },
-    recentSales: state.sales.slice(0, 20),
-    logs: state.logs.slice(0, 30),
-    config: {
-      mercadolivre: !!mlToken,
-      dfg: !!DFG_EMAIL,
-      desapego: !!DG_EMAIL,
-      gamemarket: !!GM_EMAIL,
-      ggmax: !!GX_EMAIL
-    }
-  });
+  res.json({ stats: { checks: state.checks, sales: state.sales.length, lastCheck: state.lastCheck }, recentSales: state.sales.slice(0,20), logs: state.logs.slice(0,30), config: { mercadolivre: !!mlToken, dfg: !!DFG_COOKIE, desapego: !!(dgSession||DG_EMAIL), gamemarket: !!(gmSession||GM_EMAIL), ggmax: !!(gxSession||GX_EMAIL) } });
 });
 
-app.post('/api/check-now', async (req, res) => {
-  checkAll();
-  res.json({ ok: true, message: 'Verificação iniciada' });
-});
+app.post('/api/check-now', async (req, res) => { checkAll(); res.json({ ok: true }); });
 
-// Webhook do Mercado Livre
 app.post('/webhook/mercadolivre', async (req, res) => {
   res.sendStatus(200);
   const { topic, resource } = req.body;
   if (topic === 'orders_v2' && resource && mlToken) {
     try {
-      const order = await axios.get(`https://api.mercadolibre.com${resource}`, {
-        headers: { Authorization: `Bearer ${mlToken}` }
-      });
+      const order = await axios.get(`https://api.mercadolibre.com${resource}`, { headers: { Authorization: `Bearer ${mlToken}` } });
       const o = order.data;
-      addSale({
-        id: `ml_${o.id}`,
-        market: 'mercadolivre.com.br',
-        item: o.order_items?.[0]?.item?.title || 'Produto ML',
-        price: parseFloat(o.total_amount || 0).toFixed(2),
-        buyer: o.buyer?.nickname || '',
-        detectedAt: new Date().toISOString(),
-        source: 'webhook'
-      });
+      addSale({ id: `ml_${o.id}`, market: 'mercadolivre.com.br', item: o.order_items?.[0]?.item?.title||'Produto ML', price: parseFloat(o.total_amount||0).toFixed(2), buyer: o.buyer?.nickname||'', detectedAt: new Date().toISOString(), source: 'webhook' });
     } catch (e) { addLog('[ML Webhook] Erro: ' + e.message); }
   }
 });
@@ -497,10 +234,7 @@ app.post('/webhook/mercadolivre', async (req, res) => {
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 app.listen(PORT, () => {
-  console.log(`✅ Market Alert rodando na porta ${PORT}`);
-  console.log(`   ML Token: ${mlToken ? 'OK' : 'NÃO CONFIGURADO'}`);
-  console.log(`   DFG: ${DFG_EMAIL ? 'OK' : 'NÃO CONFIGURADO'}`);
-  console.log(`   Desapego: ${DG_EMAIL ? 'OK' : 'NÃO CONFIGURADO'}`);
-  console.log(`   GameMarket: ${GM_EMAIL ? 'OK' : 'NÃO CONFIGURADO'}`);
-  console.log(`   GGMAX: ${GX_EMAIL ? 'OK' : 'NÃO CONFIGURADO'}`);
+  console.log(`Market Alert v3 porta ${PORT}`);
+  console.log(`DFG_COOKIE: ${DFG_COOKIE ? 'OK' : 'NAO CONFIGURADO'}`);
+  console.log(`ML_TOKEN: ${mlToken ? 'OK' : 'NAO CONFIGURADO'}`);
 });
