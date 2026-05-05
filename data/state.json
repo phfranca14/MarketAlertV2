@@ -1,0 +1,188 @@
+{
+  "stats": {
+    "checks": 14,
+    "sales": 10
+  },
+  "recentSales": [
+    {
+      "id": "738875b6-8cdd-4816-9eb0-d7ea1ff9abd5",
+      "market": "dfg.com.br",
+      "item": "Produto detectado",
+      "price": "29,90",
+      "detectedAt": "2026-05-05T14:59:31.100Z",
+      "source": "polling"
+    },
+    {
+      "id": "6ffe7985-a4d4-4057-bc2c-cfcc7d8200ec",
+      "market": "ggmax.com.br",
+      "item": "Produto detectado",
+      "price": "79,90",
+      "detectedAt": "2026-05-05T14:59:21.091Z",
+      "source": "polling"
+    },
+    {
+      "id": "dbc15632-3da6-4197-8ae8-51d3988b41f3",
+      "market": "gamemarket.com.br",
+      "item": "Produto detectado",
+      "price": "79,90",
+      "detectedAt": "2026-05-05T14:59:11.088Z",
+      "source": "polling"
+    },
+    {
+      "id": "f81793ba-9a1c-4f04-8aea-d7af60ce08da",
+      "market": "dfg.com.br",
+      "item": "Produto detectado",
+      "price": "119,00",
+      "detectedAt": "2026-05-05T14:59:11.087Z",
+      "source": "polling"
+    },
+    {
+      "id": "284b69b8-6617-413c-9966-cff688a1c43d",
+      "market": "desapegogames.com.br",
+      "item": "Produto detectado",
+      "price": "29,90",
+      "detectedAt": "2026-05-05T14:58:11.036Z",
+      "source": "polling"
+    },
+    {
+      "id": "ea42b131-3756-45c1-893a-767f192fa169",
+      "market": "desapegogames.com.br",
+      "item": "Produto detectado",
+      "price": "149,90",
+      "detectedAt": "2026-05-05T14:57:51.011Z",
+      "source": "polling"
+    },
+    {
+      "id": "1859c19d-25b9-4dbc-8f9a-7115cefab3ed",
+      "market": "gamemarket.com.br",
+      "item": "Produto detectado",
+      "price": "119,00",
+      "detectedAt": "2026-05-05T14:57:41.010Z",
+      "source": "polling"
+    },
+    {
+      "id": "d6d3e2e0-f159-457b-a1b3-fd712e94dd56",
+      "market": "ggmax.com.br",
+      "item": "Produto detectado",
+      "price": "149,90",
+      "detectedAt": "2026-05-05T14:57:41.010Z",
+      "source": "polling"
+    },
+    {
+      "id": "3022b21b-cc63-4574-ae7b-2b2aca90ae69",
+      "market": "ggmax.com.br",
+      "item": "Produto detectado",
+      "price": "29,90",
+      "detectedAt": "2026-05-05T14:57:31.003Z",
+      "source": "polling"
+    },
+    {
+      "id": "e01552d3-1b00-4537-8869-1f6d6bc6a8a2",
+      "market": "gamemarket.com.br",
+      "item": "Produto detectado",
+      "price": "29,90",
+      "detectedAt": "2026-05-05T14:57:20.994Z",
+      "source": "polling"
+    }
+  ],
+  "connectors": {},
+  "lastSeen": {},
+  "logs": [
+    {
+      "id": "7abf99fb-6791-4763-ba51-102f932414a3",
+      "at": "2026-05-05T14:59:31.100Z",
+      "title": "Nova venda",
+      "body": "dfg.com.br vendeu Produto detectado por R$ 29,90."
+    },
+    {
+      "id": "84732019-c27e-44ad-ac47-7a41213a3479",
+      "at": "2026-05-05T14:59:21.092Z",
+      "title": "Nova venda",
+      "body": "ggmax.com.br vendeu Produto detectado por R$ 79,90."
+    },
+    {
+      "id": "28e55b35-45ee-4e8f-a4ac-ba9877be3664",
+      "at": "2026-05-05T14:59:11.088Z",
+      "title": "Nova venda",
+      "body": "gamemarket.com.br vendeu Produto detectado por R$ 79,90."
+    },
+    {
+      "id": "07596ca9-50f2-4010-a63f-58f3d32ba606",
+      "at": "2026-05-05T14:59:11.088Z",
+      "title": "Nova venda",
+      "body": "dfg.com.br vendeu Produto detectado por R$ 119,00."
+    },
+    {
+      "id": "17666a94-9afb-437b-bd8f-a4d400e3cf57",
+      "at": "2026-05-05T14:59:01.075Z",
+      "title": "Checagem",
+      "body": "Nenhuma nova venda encontrada nesta rodada."
+    },
+    {
+      "id": "9a63c891-ea5e-44d0-8450-32fbbdccb53e",
+      "at": "2026-05-05T14:58:51.074Z",
+      "title": "Checagem",
+      "body": "Nenhuma nova venda encontrada nesta rodada."
+    },
+    {
+      "id": "c3a651bb-a6d7-4f50-b666-9919cbf9aedb",
+      "at": "2026-05-05T14:58:41.062Z",
+      "title": "Checagem",
+      "body": "Nenhuma nova venda encontrada nesta rodada."
+    },
+    {
+      "id": "0e5d7658-cc6c-4218-aee9-0828561a1954",
+      "at": "2026-05-05T14:58:31.054Z",
+      "title": "Checagem",
+      "body": "Nenhuma nova venda encontrada nesta rodada."
+    },
+    {
+      "id": "93ea9f21-99ac-44db-89f5-c1313b0d0f2d",
+      "at": "2026-05-05T14:58:21.039Z",
+      "title": "Checagem",
+      "body": "Nenhuma nova venda encontrada nesta rodada."
+    },
+    {
+      "id": "900b02f4-2c92-490f-95f8-ae21c7ce9563",
+      "at": "2026-05-05T14:58:11.036Z",
+      "title": "Nova venda",
+      "body": "desapegogames.com.br vendeu Produto detectado por R$ 29,90."
+    },
+    {
+      "id": "191015bb-c924-4847-8843-093d84c2da7c",
+      "at": "2026-05-05T14:58:01.025Z",
+      "title": "Checagem",
+      "body": "Nenhuma nova venda encontrada nesta rodada."
+    },
+    {
+      "id": "7abf6019-e16a-4170-9573-62fe9079b806",
+      "at": "2026-05-05T14:57:51.011Z",
+      "title": "Nova venda",
+      "body": "desapegogames.com.br vendeu Produto detectado por R$ 149,90."
+    },
+    {
+      "id": "8abd2bc5-36ac-4129-9891-cb8ffd33fced",
+      "at": "2026-05-05T14:57:41.010Z",
+      "title": "Nova venda",
+      "body": "gamemarket.com.br vendeu Produto detectado por R$ 119,00."
+    },
+    {
+      "id": "a96815bb-6e7e-4a0e-ba1b-5380da923b51",
+      "at": "2026-05-05T14:57:41.010Z",
+      "title": "Nova venda",
+      "body": "ggmax.com.br vendeu Produto detectado por R$ 149,90."
+    },
+    {
+      "id": "30a8ee2e-8e10-4f3d-9ada-95d7fb29bb30",
+      "at": "2026-05-05T14:57:31.003Z",
+      "title": "Nova venda",
+      "body": "ggmax.com.br vendeu Produto detectado por R$ 29,90."
+    },
+    {
+      "id": "49e136b6-5b8f-4704-9159-5957dcee9ae8",
+      "at": "2026-05-05T14:57:20.995Z",
+      "title": "Nova venda",
+      "body": "gamemarket.com.br vendeu Produto detectado por R$ 29,90."
+    }
+  ]
+}
